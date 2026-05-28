@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+
+<meta name="viewport"
+content="width=device-width,
+initial-scale=1.0,
+maximum-scale=1.0,
+user-scalable=no">
+
+<title>Telegram Mosaic</title>
+
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+<style>
+
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+    -webkit-tap-highlight-color: transparent;
+}
+
+html,body{
+    width:100%;
+    height:100%;
+    overflow:hidden;
+    background:#050505;
+    font-family:Arial,sans-serif;
+    touch-action:none;
+}
+
+body{
+    position:relative;
+}
+
+canvas{
+    position:absolute;
+    inset:0;
+    width:100%;
+    height:100%;
+}
+
+#ui{
+
+    position:fixed;
+
+    top:18px;
+    left:50%;
+
+    transform:translateX(-50%);
+
+    z-index:10;
+
+    display:flex;
+    flex-direction:column;
+
+    align-items:center;
+
+    gap:10px;
+
+}
+
+#upload{
+    display:none;
+}
+
+.uploadBtn{
+
+    width:190px;
+    height:50px;
+
+    border-radius:18px;
+
+    background:#1f1f1f;
+
+    border:1px solid rgba(255,255,255,0.08);
+
+    color:white;
+
+    display:flex;
+    align-items:center;
+    justify-content:center;
+
+    font-size:15px;
+    font-weight:600;
+
+    backdrop-filter:blur(10px);
+
+}
+
+.uploadBtn:active{
+    transform:scale(0.96);
+}
+
+.info{
+
+    color:rgba(255,255,255,0.7);
+    font-size:13px;
+
+}
+
+</style>
+</head>
+<body>
+
+<div id="ui">
+
+    <label class="uploadBtn" for="upload">
+        Загрузить
+    </label>
+
+    <div class="info">
+        Проведи пальцем
+    </div>
+
+</div>
+
+<input
+type="file"
+id="upload"
+accept="image/*">
+
+<canvas id="canvas"></canvas>
+
+<script>
+
+const tg = window.Telegram.WebApp;
+
+tg.expand();
+
+const canvas =
+document.getElementById("canvas");
+
+const ctx =
+canvas.getContext("2d");
+
+function resizeCanvas(){
+
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+}
+
+resizeCanvas();
+
+window.addEventListener(
+    "resize",
+    resizeCanvas
+);
+
+const BALL_SIZE = 2;
+const GAP = 4;
+
+const PUSH_RADIUS = 90;
+const PUSH_FORCE = 2.6;
+
+const RETURN_FORCE = 0.05;
+const FRICTION = 0.88;
+
+let balls = [];
+
+const pointer = {
+
+    x:-9999,
+    y:-9999
+
+};
+
+class Ball{
+
+    constructor(x,y,color){
+
+        this.baseX = x;
+        this.baseY = y;
+
+        this.x = x;
+        this.y = y;
+
+        this.vx = 0;
+        this.vy = 0;
+
+        this.color = color;
+
+    }
+
+    update(){
+
+        const dx = this.x - pointer.x;
+        const dy = this.y - pointer.y;
+
+        const dist =
+        Math.sqrt(dx*dx + dy*dy);
+
+        if(dist < PUSH_RADIUS){
+
+            const angle =
+            Math.atan2(dy,dx);
+
+            const force =
+            (1 - dist / PUSH_RADIUS)
+            * PUSH_FORCE;
+
+            this.vx +=
+            Math.cos(angle) * force;
+
+            this.vy +=
+            Math.sin(angle) * force;
+
+        }
+
+        const backX =
+        this.baseX - this.x;
+
+        const backY =
+        this.baseY - this.y;
+
+        this.vx +=
+        backX * RETURN_FORCE;
+
+        this.vy +=
+        backY * RETURN_FORCE;
+
+        this.vx *= FRICTION;
+        this.vy *= FRICTION;
+
+        this.x += this.vx;
+        this.y += this.vy;
+
+    }
+
+    draw(){
+
+        ctx.beginPath();
+
+        ctx.fillStyle = this.color;
+
+        ctx.arc(
+            this.x,
+            this.y,
+            BALL_SIZE,
+            0,
+            Math.PI * 2
+        );
+
+        ctx.fill();
+
+    }
+
+}
+
+function setPointer(x,y){
+
+    pointer.x = x;
+    pointer.y = y;
+
+}
+
+window.addEventListener(
+    "mousemove",
+    e=>{
+
+        setPointer(
+            e.clientX,
+            e.clientY
+        );
+
+    }
+);
+
+window.addEventListener(
+    "touchmove",
+    e=>{
+
+        const touch = e.touches[0];
+
+        setPointer(
+            touch.clientX,
+            touch.clientY
+        );
+
+    },
+    {passive:true}
+);
+
+window.addEventListener(
+    "touchend",
+    ()=>{
+
+        pointer.x = -9999;
+        pointer.y = -9999;
+
+    }
+);
+
+document
+.getElementById("upload")
+.addEventListener(
+    "change",
+    e=>{
+
+        const file =
+        e.target.files[0];
+
+        if(!file) return;
+
+        const img = new Image();
+
+        img.onload = ()=>{
+
+            createMosaic(img);
+
+        };
+
+        img.src =
+        URL.createObjectURL(file);
+
+    }
+);
+
+function createMosaic(img){
+
+    balls = [];
+
+    const tempCanvas =
+    document.createElement("canvas");
+
+    const tempCtx =
+    tempCanvas.getContext("2d");
+
+    let scale = Math.min(
+
+        (canvas.width * 0.85) /
+        img.width,
+
+        (canvas.height * 0.72) /
+        img.height
+
+    );
+
+    const w =
+    Math.floor(img.width * scale);
+
+    const h =
+    Math.floor(img.height * scale);
+
+    tempCanvas.width = w;
+    tempCanvas.height = h;
+
+    tempCtx.drawImage(
+        img,
+        0,
+        0,
+        w,
+        h
+    );
+
+    const imageData =
+    tempCtx.getImageData(
+        0,
+        0,
+        w,
+        h
+    ).data;
+
+    const offsetX =
+    (canvas.width - w) / 2;
+
+    const offsetY =
+    (canvas.height - h) / 2 + 30;
+
+    for(let y = 0; y < h; y += GAP){
+
+        for(let x = 0; x < w; x += GAP){
+
+            const index =
+            (y * w + x) * 4;
+
+            const r =
+            imageData[index];
+
+            const g =
+            imageData[index + 1];
+
+            const b =
+            imageData[index + 2];
+
+            const a =
+            imageData[index + 3];
+
+            if(a > 20){
+
+                balls.push(
+
+                    new Ball(
+
+                        offsetX + x,
+                        offsetY + y,
+
+                        `rgb(${r},${g},${b})`
+
+                    )
+
+                );
+
+            }
+
+        }
+
+    }
+
+}
+
+function animate(){
+
+    ctx.clearRect(
+        0,
+        0,
+        canvas.width,
+        canvas.height
+    );
+
+    for(let ball of balls){
+
+        ball.update();
+        ball.draw();
+
+    }
+
+    requestAnimationFrame(animate);
+
+}
+
+animate();
+
+</script>
+
+</body>
+</html>
